@@ -152,7 +152,7 @@ const PALETTE = {
 // 歩合計算（3段階すべて分解して返す）
 // ─────────────────────────────────────────────
 function calcBreakdown(type, eiSalesYen) {
-  const s = eiSalesYen * ADJUSTMENT;
+  const s = eiSalesYen * DEFAULT_ADJUSTMENT;
 
   if (type === "kakujitsu") {
     const baseA = s * 0.4144;
