@@ -7,7 +7,7 @@ import {
 // ─────────────────────────────────────────────
 // 定数
 // ─────────────────────────────────────────────
-const ADJUSTMENT = 0.9832;
+const DEFAULT_ADJUSTMENT = 0.9832; // デフォルト運賃改定係数
 
 const WORK_TYPES = {
   kakujitsu: {
@@ -85,8 +85,8 @@ function endTimeLabel(workType, totalHours) {
 // ─────────────────────────────────────────────
 // 給与計算ロジック
 // ─────────────────────────────────────────────
-function calcHoai(type, eiSales) {
-  const s = eiSales * ADJUSTMENT;
+function calcHoai(type, eiSales, adjustment) {
+  const s = eiSales * adjustment;
   if (type === "kakujitsu") {
     const baseA = s * 0.4144;
     const baseB = s > 420000 ? (Math.min(s, 1000000) - 420000) * 0.1905 : 0;
@@ -539,7 +539,7 @@ function SalaryGraph() {
 
         {/* 注記 */}
         <div style={{ marginTop:16, fontSize:10, color:"rgba(110,130,170,0.3)", lineHeight:2, textAlign:"center" }}>
-          ※ 営収に運賃改定係数 0.9832 を乗じた後の金額で計算<br />
+          ※ 営収に運賃改定係数 0.9832（デフォルト）を乗じた後の金額で計算<br />
           ※ 残業・深夜割増・各種手当は含まない（歩合A・B・Cのみ）<br />
           ※ 最低賃金保障は残業・深夜なし想定（東京都 {TOKYO_MIN_WAGE}円/h）
         </div>
@@ -648,6 +648,7 @@ function RRow({ label, value, color = "#e8eaf0", bold, indent, sub, zero }) {
 // ─────────────────────────────────────────────
 export default function App() {
   const [mainTab,        setMainTab]        = useState("simulator"); // "simulator" | "graph"
+  const [adjustInput,    setAdjustInput]    = useState("0.9832"); // 運賃改定係数
   const [workType,       setWorkType]       = useState(null);
   const [eiSalesInput,   setEiSalesInput]   = useState("");
   const [totalHoursInput,setTotalHoursInput]= useState("");
@@ -659,6 +660,7 @@ export default function App() {
   const [isLeader,       setIsLeader]       = useState(null);
 
   const wt         = workType ? WORK_TYPES[workType] : null;
+  const adjustment = parseFloat(adjustInput) || DEFAULT_ADJUSTMENT;
   const eiSales    = parseFloat(eiSalesInput) * 10000 || 0;
   const totalHours = parseFloat(totalHoursInput) || 0;
   const shifts     = parseInt(actualShifts) || 0;
@@ -676,7 +678,7 @@ export default function App() {
 
   const result = useMemo(() => {
     if (!inputReady || !wt) return null;
-    const hoai  = calcHoai(workType, eiSales);
+    const hoai  = calcHoai(workType, eiSales, adjustment);
     const zangyo = calcZangyo(hoai.total, totalHours, wt.teisho);
     const shinya = shinyaHours;
     const zan    = zangyoNormal + zangyoOver60;
@@ -759,6 +761,55 @@ export default function App() {
 
       {/* シミュレータータブ */}
       {mainTab === "simulator" && <div style={{ maxWidth: 540, margin: "0 auto" }}>
+
+        {/* ── 運賃改定係数設定 ── */}
+        <div style={{
+          marginBottom: 14, borderRadius: 14, overflow: "hidden",
+          border: `1px solid rgba(251,191,36,0.35)`,
+          background: "rgba(251,191,36,0.06)",
+        }}>
+          <div style={{
+            padding: "10px 16px", display: "flex", alignItems: "center", gap: 8,
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(251,191,36,0.10)",
+          }}>
+            <span style={{ fontSize: 14 }}>⚙️</span>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "#fbbf24" }}>
+              運賃改定係数（変更可能）
+            </span>
+          </div>
+          <div style={{ padding: "12px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="number"
+                value={adjustInput}
+                onChange={e => setAdjustInput(e.target.value)}
+                step="0.0001"
+                style={{
+                  width: 120, padding: "9px 12px", borderRadius: 10,
+                  border: `1.5px solid rgba(251,191,36,0.6)`,
+                  background: "rgba(0,0,0,0.35)", color: "#fbbf24",
+                  fontSize: 16, fontWeight: 700, outline: "none", appearance: "none",
+                }}
+              />
+              <div style={{ fontSize: 12, color: "rgba(200,215,255,0.55)", lineHeight: 1.7 }}>
+                <div>現在の係数：<span style={{ color: "#fbbf24", fontWeight: 700 }}>{adjustment}</span></div>
+                <div style={{ fontSize: 10, color: "rgba(180,195,230,0.38)" }}>
+                  デフォルト：0.9832（令和5年11月20日改定）
+                </div>
+              </div>
+              <button
+                onClick={() => setAdjustInput("0.9832")}
+                style={{
+                  padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+                  border: "1px solid rgba(251,191,36,0.3)",
+                  background: "rgba(251,191,36,0.1)", color: "#fbbf24",
+                  fontSize: 11, fontWeight: 600,
+                }}
+              >リセット</button>
+            </div>
+          </div>
+        </div>
 
         {/* ── STEP 1: 勤務形態 ── */}
         <Card title="STEP 1　勤務形態を選択" icon="📋" color={ac} done={!!workType}>
@@ -1142,7 +1193,7 @@ export default function App() {
                 }}>
                   <div>【出勤固定】{wt.startHour}:00 → 退勤 {endTimeStr}（総労働 {totalHours}h）</div>
                   <div>【深夜自動計算】22:00〜翌5:00 と重複 = {fmtH(shinyaHours)}h</div>
-                  <div>【営収調整】{(eiSales/10000).toFixed(1)}万 × 0.9832 = {(eiSales*ADJUSTMENT/10000).toFixed(2)}万</div>
+                  <div>【営収調整】{(eiSales/10000).toFixed(1)}万 × {adjustment} = {(eiSales*adjustment/10000).toFixed(2)}万</div>
                   <div>【歩合A】× {workType==="hirubi"?"45.80%":workType==="kakujitsu"?"41.44%":"37.98%"}
                     = {fmt(result.hoai.baseA)}</div>
                   {(result.hoai.baseB||0) > 0 && <div>【歩合B】閾値超過分 = {fmt(result.hoai.baseB)}</div>}
