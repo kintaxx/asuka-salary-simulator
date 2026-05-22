@@ -1171,14 +1171,20 @@ export default function App() {
                 border: "1px solid rgba(255,255,255,0.08)",
                 display: "flex", justifyContent: "space-between", alignItems: "center",
               }}>
-                <span style={{ fontSize: 12, color: "rgba(185,200,235,0.55)" }}>
-                  営業収入に対する歩合給の割合
-                </span>
+                <div>
+                  <div style={{ fontSize: 12, color: "rgba(185,200,235,0.55)", marginBottom: 4 }}>
+                    営業収入に対する給与総額の割合
+                  </div>
+                  <div style={{ fontSize: 10, color: "rgba(160,180,220,0.4)" }}>
+                    給与総額 {fmtM(result.grandTotal)} ÷ 営収 {fmtM(eiSales)}
+                  </div>
+                </div>
                 <span style={{
-                  fontSize: 20, fontWeight: 900, letterSpacing: "0.04em",
+                  fontSize: 22, fontWeight: 900, letterSpacing: "0.04em",
                   fontVariantNumeric: "tabular-nums", color: wt.color,
+                  textShadow: `0 0 20px ${wt.color}66`,
                 }}>
-                  歩合給　{eiSales > 0 ? ((result.hoai.total / eiSales) * 100).toFixed(2) : "0.00"}%
+                  {eiSales > 0 ? ((result.grandTotal / eiSales) * 100).toFixed(2) : "0.00"}%
                 </span>
               </div>
 
