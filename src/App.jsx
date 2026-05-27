@@ -17,7 +17,7 @@ const WORK_TYPES = {
     desc: "1乗務14.25h × 12回 = 171h/月",
     mihan: { musiji: 200, muijiko: 700, leader: 1900 },
     mohan: 3000, minShifts: 9,
-    startHour: 7,
+    startHour: 7, kyukei: 3.0,
   },
   hirubi: {
     id: "hirubi", label: "昼日勤", icon: "☀️",
@@ -26,7 +26,7 @@ const WORK_TYPES = {
     desc: "1乗務7.5h × 22日 = 165h/月",
     mihan: { musiji: 100, muijiko: 350, leader: 1100 },
     mohan: 3300, minShifts: 17,
-    startHour: 7,
+    startHour: 7, kyukei: 2.0,
   },
   yorubi: {
     id: "yorubi", label: "夜日勤", icon: "🌃",
@@ -35,7 +35,7 @@ const WORK_TYPES = {
     desc: "1乗務7.5h × 22日 = 165h/月",
     mihan: { musiji: 100, muijiko: 350, leader: 1000 },
     mohan: 3000, minShifts: 17,
-    startHour: 18,
+    startHour: 18, kyukei: 2.0,
   },
 };
 
@@ -61,13 +61,24 @@ function calcShinyaAuto(workType, totalHours, startHourOverride) {
   const wt = WORK_TYPES[workType];
   if (!wt || totalHours <= 0) return 0;
   const startHour = startHourOverride !== undefined ? startHourOverride : wt.startHour;
-  const endHour = startHour + totalHours;
-  // 深夜帯を 22〜29（翌5時）として計算
+  const kyukei = wt.kyukei || 0;
+
+  // 1乗務あたりの労働時間
+  const perShiftRodo = totalHours / wt.stdShifts;
+  // 拘束時間 = 1乗務の労働時間 + 休憩時間
+  const kosoku = perShiftRodo + kyukei;
+  // 退勤時刻（拘束終了）
+  const endHour = startHour + kosoku;
+
+  // 深夜帯 22:00〜翌5:00 = 22〜29
   const shinyaStart = 22;
   const shinyaEnd = 29;
   const overlapStart = Math.max(startHour, shinyaStart);
   const overlapEnd = Math.min(endHour, shinyaEnd);
-  return Math.max(0, Math.round((overlapEnd - overlapStart) * 100) / 100);
+  // 1乗務の深夜時間 × 乗務数
+  const shinyaPerShift = Math.max(0, overlapEnd - overlapStart);
+  const totalShinya = shinyaPerShift * wt.stdShifts;
+  return Math.round(totalShinya * 100) / 100;
 }
 
 // 退勤時刻を表示用文字列に変換
@@ -75,7 +86,10 @@ function endTimeLabel(workType, totalHours, startHourOverride) {
   const wt = WORK_TYPES[workType];
   if (!wt || totalHours <= 0) return "";
   const sh = startHourOverride !== undefined ? startHourOverride : wt.startHour;
-  const endHour = sh + totalHours;
+  const kyukei = wt.kyukei || 0;
+  // 1乗務の拘束時間 = 総労働÷乗務数 + 休憩
+  const perShiftRodo = totalHours / wt.stdShifts;
+  const endHour = sh + perShiftRodo + kyukei;
   const h = Math.floor(endHour % 24);
   const m = Math.round((endHour % 1) * 60);
   const mm = String(m).padStart(2, "0");
