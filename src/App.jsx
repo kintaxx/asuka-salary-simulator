@@ -57,10 +57,10 @@ function calcMinWageHosho(totalHours, zangyoHours, shinyaHours) {
 // ─────────────────────────────────────────────
 // 深夜時間自動計算（22:00〜翌5:00）
 // ─────────────────────────────────────────────
-function calcShinyaAuto(workType, totalHours) {
+function calcShinyaAuto(workType, totalHours, startHourOverride) {
   const wt = WORK_TYPES[workType];
   if (!wt || totalHours <= 0) return 0;
-  const startHour = wt.startHour;
+  const startHour = startHourOverride !== undefined ? startHourOverride : wt.startHour;
   const endHour = startHour + totalHours;
   // 深夜帯を 22〜29（翌5時）として計算
   const shinyaStart = 22;
@@ -71,10 +71,11 @@ function calcShinyaAuto(workType, totalHours) {
 }
 
 // 退勤時刻を表示用文字列に変換
-function endTimeLabel(workType, totalHours) {
+function endTimeLabel(workType, totalHours, startHourOverride) {
   const wt = WORK_TYPES[workType];
   if (!wt || totalHours <= 0) return "";
-  const endHour = wt.startHour + totalHours;
+  const sh = startHourOverride !== undefined ? startHourOverride : wt.startHour;
+  const endHour = sh + totalHours;
   const h = Math.floor(endHour % 24);
   const m = Math.round((endHour % 1) * 60);
   const mm = String(m).padStart(2, "0");
@@ -103,18 +104,28 @@ function calcHoai(type, eiSales, adjustment) {
   return { baseA, baseB, total: baseA + baseB };
 }
 
-function calcZangyo(hoaiTotal, totalHours, teisho) {
+function calcZangyo(hoaiTotal, totalHours, teisho, shinyaHours) {
   const zangyoTotal = Math.max(0, totalHours - teisho);
-  if (zangyoTotal === 0) return { zangyoHours: 0, over60Hours: 0, zangyoPay: 0, over60Pay: 0, totalPay: 0 };
+  const hourlyRate = hoaiTotal / totalHours;
+  if (zangyoTotal === 0) {
+    // 残業なしでも深夜割増は発生する
+    const shinyaPay = hourlyRate * 0.25 * (shinyaHours || 0);
+    return { zangyoHours: 0, over60Hours: 0, zangyoPay: 0, over60Pay: 0, shinyaPay, zangyoSubtotal: 0, totalPay: shinyaPay };
+  }
   const zangyoNormal = Math.min(zangyoTotal, 60);
   const zangyoOver60 = Math.max(0, zangyoTotal - 60);
-  const hourlyRate = hoaiTotal / totalHours;
+  const zangyoPay  = hourlyRate * 0.25 * zangyoNormal;
+  const over60Pay  = hourlyRate * 0.25 * zangyoOver60;
+  const shinyaPay  = hourlyRate * 0.25 * (shinyaHours || 0);
+  const zangyoSubtotal = zangyoPay + over60Pay;
   return {
     zangyoHours: zangyoNormal,
     over60Hours: zangyoOver60,
-    zangyoPay: hourlyRate * 0.25 * zangyoNormal,
-    over60Pay: hourlyRate * 0.25 * zangyoOver60,
-    totalPay: hourlyRate * 0.25 * (zangyoNormal + zangyoOver60),
+    zangyoPay,
+    over60Pay,
+    shinyaPay,
+    zangyoSubtotal,
+    totalPay: zangyoSubtotal + shinyaPay,
   };
 }
 
@@ -654,6 +665,7 @@ export default function App() {
   const [totalHoursInput,setTotalHoursInput]= useState("");
   const [actualShifts,   setActualShifts]   = useState("");
   const [yukyuInput,     setYukyuInput]     = useState("");   // 有給手当
+  const [startHourInput, setStartHourInput] = useState(null); // 出勤時刻（null=デフォルト）
   const [jikoAri,        setJikoAri]        = useState(null);
   const [hanhanAri,      setHanhanAri]      = useState(null);
   const [mohanOK,        setMohanOK]        = useState(null);
@@ -667,8 +679,9 @@ export default function App() {
   const yukyuPay   = parseFloat(yukyuInput) || 0;  // 有給手当（円）
 
   // 深夜時間を自動計算
-  const shinyaHours    = workType && totalHours > 0 ? calcShinyaAuto(workType, totalHours) : 0;
-  const endTimeStr     = workType && totalHours > 0 ? endTimeLabel(workType, totalHours) : "";
+  const effectiveStart = startHourInput !== null ? startHourInput : (wt ? wt.startHour : null);
+  const shinyaHours    = workType && totalHours > 0 ? calcShinyaAuto(workType, totalHours, effectiveStart) : 0;
+  const endTimeStr     = workType && totalHours > 0 ? endTimeLabel(workType, totalHours, effectiveStart) : "";
   const zangyoTotal    = wt ? Math.max(0, totalHours - wt.teisho) : 0;
   const zangyoNormal   = Math.min(zangyoTotal, 60);
   const zangyoOver60   = Math.max(0, zangyoTotal - 60);
@@ -679,8 +692,8 @@ export default function App() {
   const result = useMemo(() => {
     if (!inputReady || !wt) return null;
     const hoai  = calcHoai(workType, eiSales, adjustment);
-    const zangyo = calcZangyo(hoai.total, totalHours, wt.teisho);
     const shinya = shinyaHours;
+    const zangyo = calcZangyo(hoai.total, totalHours, wt.teisho, shinya);
     const zan    = zangyoNormal + zangyoOver60;
 
     const mohanOKAll  = !jikoAri && !hanhanAri && mohanOK && shifts >= wt.minShifts;
@@ -713,7 +726,7 @@ export default function App() {
              teateTotal, teateZTotal, yukyu,
              minWageHosho, hoshoHojuu, beforeHosho, grandTotal };
   }, [inputReady, workType, eiSales, totalHours, shinyaHours,
-      shifts, jikoAri, hanhanAri, mohanOK, isLeader, yukyuPay]);
+      shifts, jikoAri, hanhanAri, mohanOK, isLeader, yukyuPay, startHourInput]);
 
   const ac = wt?.color || "#4f8ef7";
 
@@ -817,7 +830,7 @@ export default function App() {
             {Object.values(WORK_TYPES).map(wk => {
               const sel = workType === wk.id;
               return (
-                <button key={wk.id} onClick={() => setWorkType(wk.id)} style={{
+                <button key={wk.id} onClick={() => { setWorkType(wk.id); setStartHourInput(null); }} style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
                   borderRadius: 12, cursor: "pointer", textAlign: "left", transition: "all 0.2s",
                   border: sel ? `2px solid ${wk.color}` : "2px solid rgba(255,255,255,0.07)",
@@ -827,7 +840,7 @@ export default function App() {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: sel ? wk.color : "#d5dcf0" }}>{wk.label}</div>
                     <div style={{ fontSize: 10, color: "rgba(155,175,215,0.42)", marginTop: 2 }}>
-                      {wk.desc}　／　出勤固定 {wk.startHour}:00
+                      {wk.desc}　／　出勤 {workType === wk.id && effectiveStart !== undefined ? `${Math.floor(effectiveStart)}:${effectiveStart % 1 === 0.5 ? "30" : "00"}` : `${wk.startHour}:00`}
                     </div>
                   </div>
                   <div style={{
@@ -853,6 +866,61 @@ export default function App() {
               <NumInput value={eiSalesInput} onChange={setEiSalesInput}
                 unit="万円" placeholder="例：50" color={ac} />
             </div>
+
+            {/* 出勤時刻選択ダイヤル */}
+            {wt && (
+              <div>
+                <Lbl text="出勤時刻"
+                  hint={`デフォルト：${wt.startHour}:00　変更可能`} />
+                <div style={{
+                  display: "flex", gap: 4, flexWrap: "wrap",
+                }}>
+                  {(wt.id === "yorubi"
+                    ? [17, 17.5, 18, 18.5, 19, 19.5]
+                    : [5, 5.5, 6, 6.5, 7, 7.5, 8]
+                  ).map(h => {
+                    const hh = Math.floor(h);
+                    const mm = h % 1 === 0.5 ? "30" : "00";
+                    const label = `${hh}:${mm}`;
+                    const isDefault = h === wt.startHour;
+                    const isSelected = startHourInput === h || (startHourInput === null && isDefault);
+                    return (
+                      <button key={h} onClick={() => setStartHourInput(h)} style={{
+                        padding: "7px 10px", borderRadius: 8, cursor: "pointer",
+                        fontSize: 12, fontWeight: isSelected ? 700 : 400,
+                        border: isSelected
+                          ? `2px solid ${wt.color || '#4f8ef7'}`
+                          : "2px solid rgba(255,255,255,0.1)",
+                        background: isSelected ? `${wt.color || '#4f8ef7'}22` : "rgba(255,255,255,0.03)",
+                        color: isSelected ? (wt.color || '#4f8ef7') : "rgba(180,200,240,0.45)",
+                        transition: "all 0.15s",
+                        position: "relative",
+                      }}>
+                        {label}
+                        {isDefault && (
+                          <span style={{
+                            position: "absolute", top: -5, right: -4,
+                            fontSize: 7, background: wt.color || '#4f8ef7',
+                            color: "#fff", borderRadius: 3, padding: "1px 3px",
+                            lineHeight: 1.2,
+                          }}>初期</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {startHourInput !== null && startHourInput !== wt.startHour && (
+                  <div style={{ marginTop:5, fontSize:10, color:"#fbbf24", paddingLeft:2 }}>
+                    ⚠ デフォルト（{wt.startHour}:00）から変更中
+                    <button onClick={() => setStartHourInput(null)} style={{
+                      marginLeft:8, fontSize:9, padding:"1px 6px", borderRadius:4,
+                      border:"1px solid rgba(251,191,36,0.4)",
+                      background:"rgba(251,191,36,0.1)", color:"#fbbf24", cursor:"pointer",
+                    }}>リセット</button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 月間総労働時間 */}
             <div>
@@ -1011,7 +1079,7 @@ export default function App() {
             }}>
               <div style={{ fontSize: 10, color: wt.color, letterSpacing: "0.2em", marginBottom: 3 }}>RESULT — 給与内訳</div>
               <div style={{ fontSize: 11, color: "rgba(165,185,225,0.5)", lineHeight: 1.7 }}>
-                {wt.label}　{wt.startHour}:00出勤 → 退勤 <span style={{ color: "#e8eaf0" }}>{endTimeStr}</span><br />
+                {wt.label}　{Math.floor(effectiveStart)}:{effectiveStart % 1 === 0.5 ? "30" : "00"}出勤 → 退勤 <span style={{ color: "#e8eaf0" }}>{endTimeStr}</span><br />
                 営収 <span style={{ color: "#fbbf24" }}>{eiSalesInput}万円</span>　
                 総労働 <span style={{ color: "#fbbf24" }}>{totalHoursInput}h</span>　
                 深夜 <span style={{ color: "#818cf8" }}>{fmtH(shinyaHours)}h（自動）</span>　
@@ -1035,14 +1103,16 @@ export default function App() {
                 <RRow label="歩合給　小計" value={fmtM(result.hoai.total)} color={wt.color} bold />
               </div>
 
-              {/* ② 残業割増（歩合ベース） */}
+              {/* ② 残業手当・深夜手当（歩合ベース） */}
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 10, letterSpacing: "0.14em", marginBottom: 6,
                   color: result.zangyo.totalPay > 0 ? "#fbbf24" : "rgba(180,200,240,0.22)" }}>
                   ② 時間外割増（歩合給ベース）
                 </div>
-                {result.zangyo.totalPay === 0 ? (
-                  <div style={{ fontSize: 11, color: "rgba(130,150,190,0.32)", paddingLeft: 12 }}>残業なし</div>
+                {/* 残業手当 */}
+                <div style={{ fontSize: 10, color: "#fbbf24", paddingLeft: 4, marginBottom: 3 }}>▌ 残業手当</div>
+                {result.zangyo.zangyoSubtotal === 0 ? (
+                  <div style={{ fontSize: 11, color: "rgba(130,150,190,0.32)", paddingLeft: 12, marginBottom: 6 }}>残業なし（0円）</div>
                 ) : (
                   <>
                     <RRow label={`通常残業割増（${fmtH(result.zangyo.zangyoHours)}h × 25%）`}
@@ -1051,9 +1121,19 @@ export default function App() {
                       <RRow label={`60h超割増（${fmtH(result.zangyo.over60Hours)}h × 追加25%）`}
                         value={fmt(result.zangyo.over60Pay)} color="#ff6b6b" indent />
                     )}
-                    <RRow label="残業割増　小計" value={fmtM(result.zangyo.totalPay)} color="#fbbf24" bold />
+                    <RRow label="残業手当　小計" value={fmt(result.zangyo.zangyoSubtotal)} color="#fbbf24" bold />
                   </>
                 )}
+                {/* 深夜手当 */}
+                <div style={{ fontSize: 10, color: "#818cf8", paddingLeft: 4, marginTop: 8, marginBottom: 3 }}>▌ 深夜手当</div>
+                {result.zangyo.shinyaPay === 0 ? (
+                  <div style={{ fontSize: 11, color: "rgba(130,150,190,0.32)", paddingLeft: 12, marginBottom: 6 }}>深夜時間なし（0円）</div>
+                ) : (
+                  <RRow label={`深夜割増（${fmtH(shinyaHours)}h × 25%）`}
+                    value={fmt(result.zangyo.shinyaPay)} color="#818cf8" indent />
+                )}
+                {/* 小計 */}
+                <RRow label="残業手当＋深夜手当　小計" value={fmtM(result.zangyo.totalPay)} color="#fbbf24" bold />
               </div>
 
               {/* ③ 各種手当 */}
@@ -1149,7 +1229,9 @@ export default function App() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ lineHeight: 1.9 }}>
                     <div style={{ fontSize: 11, color: "rgba(155,175,215,0.45)" }}>① {fmtM(result.hoai.total)}</div>
-                    <div style={{ fontSize: 11, color: "rgba(155,175,215,0.45)" }}>② {fmtM(result.zangyo.totalPay)}</div>
+                    <div style={{ fontSize: 11, color: "rgba(155,175,215,0.45)" }}>
+                      ② 残業 {fmtM(result.zangyo.zangyoSubtotal)} ＋ 深夜 {fmtM(result.zangyo.shinyaPay)}
+                    </div>
                     <div style={{ fontSize: 11, color: "rgba(155,175,215,0.45)" }}>③ {fmtM(result.teateTotal + result.teateZTotal)}</div>
                     {result.yukyu > 0 && <div style={{ fontSize: 11, color: "rgba(155,175,215,0.45)" }}>④ {fmtM(result.yukyu)}</div>}
                     {result.hoshoHojuu > 0 && <div style={{ fontSize: 11, color: "#ff8c8c" }}>⑤ 最賃補填 {fmt(result.hoshoHojuu)}</div>}
@@ -1197,7 +1279,7 @@ export default function App() {
                   marginTop: 8, padding: "10px 12px", borderRadius: 8,
                   background: "rgba(0,0,0,0.45)", fontSize: 10, color: "rgba(155,175,215,0.48)", lineHeight: 2.1,
                 }}>
-                  <div>【出勤固定】{wt.startHour}:00 → 退勤 {endTimeStr}（総労働 {totalHours}h）</div>
+                  <div>【出勤時刻】{Math.floor(effectiveStart)}:{effectiveStart % 1 === 0.5 ? "30" : "00"} → 退勤 {endTimeStr}（総労働 {totalHours}h）</div>
                   <div>【深夜自動計算】22:00〜翌5:00 と重複 = {fmtH(shinyaHours)}h</div>
                   <div>【営収調整】{(eiSales/10000).toFixed(1)}万 × {adjustment} = {(eiSales*adjustment/10000).toFixed(2)}万</div>
                   <div>【歩合A】× {workType==="hirubi"?"45.80%":workType==="kakujitsu"?"41.44%":"37.98%"}
