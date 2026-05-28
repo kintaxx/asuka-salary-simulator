@@ -17,7 +17,7 @@ const WORK_TYPES = {
     desc: "1乗務14.25h × 12回 = 171h/月",
     mihan: { musiji: 200, muijiko: 700, leader: 1900 },
     mohan: 3000, minShifts: 9,
-    startHour: 7, kyukei: 3.0,
+    startHour: 7, kyukei: 3.0, kosokuMax: 21, tsukiMax: 262, tsukiLimit: 270,
   },
   hirubi: {
     id: "hirubi", label: "昼日勤", icon: "☀️",
@@ -26,7 +26,7 @@ const WORK_TYPES = {
     desc: "1乗務7.5h × 22日 = 165h/月",
     mihan: { musiji: 100, muijiko: 350, leader: 1100 },
     mohan: 3300, minShifts: 17,
-    startHour: 7, kyukei: 2.0,
+    startHour: 7, kyukei: 1.5, kosokuMax: 12, tsukiMax: 288, tsukiLimit: 288,
   },
   yorubi: {
     id: "yorubi", label: "夜日勤", icon: "🌃",
@@ -35,7 +35,7 @@ const WORK_TYPES = {
     desc: "1乗務7.5h × 22日 = 165h/月",
     mihan: { musiji: 100, muijiko: 350, leader: 1000 },
     mohan: 3000, minShifts: 17,
-    startHour: 18, kyukei: 2.0,
+    startHour: 18, kyukei: 1.5, kosokuMax: 12, tsukiMax: 288, tsukiLimit: 288,
   },
 };
 
@@ -984,6 +984,72 @@ export default function App() {
                   ⚠ 60時間超残業 {fmtH(zangyoOver60)}h — 割増率が上がります（+25%追加）
                 </div>
               )}
+              {/* 拘束時間警告 */}
+              {wt && totalHours > 0 && shifts > 0 && (() => {
+                const perShiftRodo = totalHours / shifts;
+                const kosokuPer   = perShiftRodo + wt.kyukei;
+                const kosokuTsuki = totalHours + wt.kyukei * shifts;
+                const overPer     = kosokuPer - wt.kosokuMax;
+                const overTsuki   = kosokuTsuki - wt.tsukiMax;
+                const overLimit   = kosokuTsuki - wt.tsukiLimit;
+
+                const warnings = [];
+
+                // 1乗務の拘束時間超過
+                if (overPer > 0) {
+                  warnings.push({
+                    level: "🚫",
+                    color: "#ff4444",
+                    bg: "rgba(255,50,50,0.12)",
+                    border: "rgba(255,50,50,0.4)",
+                    title: "1乗務の拘束時間が上限超過",
+                    body: `1乗務の拘束時間：${fmtH(kosokuPer)}h（上限 ${wt.kosokuMax}h を ${fmtH(overPer)}h 超過）`,
+                    note: "→ 入力ミスの確認、または休日出勤が必要です",
+                  });
+                }
+
+                // 月間拘束時間：絶対上限超過
+                if (overLimit > 0) {
+                  warnings.push({
+                    level: "🚫",
+                    color: "#ff4444",
+                    bg: "rgba(255,50,50,0.12)",
+                    border: "rgba(255,50,50,0.4)",
+                    title: "月間拘束時間が絶対上限超過（改善基準告示違反）",
+                    body: `月間拘束時間：${fmtH(kosokuTsuki)}h（上限 ${wt.tsukiLimit}h を ${fmtH(overLimit)}h 超過）`,
+                    note: "→ 入力ミスの確認が必要です",
+                  });
+                } else if (overTsuki > 0 && wt.id === "kakujitsu") {
+                  // 隔日のみ：通常上限超過（労使協定で対応可）
+                  warnings.push({
+                    level: "⚠️",
+                    color: "#f59e0b",
+                    bg: "rgba(251,191,36,0.10)",
+                    border: "rgba(251,191,36,0.35)",
+                    title: "月間拘束時間が通常上限超過",
+                    body: `月間拘束時間：${fmtH(kosokuTsuki)}h（通常上限 ${wt.tsukiMax}h を ${fmtH(overTsuki)}h 超過）`,
+                    note: "→ 労使協定（年6か月まで最大270h）が必要です",
+                  });
+                }
+
+                if (warnings.length === 0) return null;
+
+                return (
+                  <div style={{ display:"flex", flexDirection:"column", gap:4, marginTop:6 }}>
+                    {warnings.map((w, i) => (
+                      <div key={i} style={{ padding:"8px 12px", borderRadius:8, fontSize:10,
+                        background:w.bg, border:`2px solid ${w.border}`,
+                        color:w.color, lineHeight:1.8 }}>
+                        <div style={{ fontWeight:700, fontSize:11, marginBottom:2 }}>
+                          {w.level} {w.title}
+                        </div>
+                        <div>{w.body}</div>
+                        <div style={{ marginTop:3, color: w.color+"cc" }}>{w.note}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* 実乗務回数 */}
@@ -1053,7 +1119,7 @@ export default function App() {
             }}>
               <Lbl text="⭐ 模範勤務のその他条件を満たしていますか？"
                 hint="拘束時間違反なし・出番変更なし等" />
-              <Toggle value={mohanOK} onChange={setMohanOK}
+              <Toggle value={mohanOK} onChange={v => setMohanOK(!v)}
                 labelOn="満たしていない" labelOff="満たしている"
                 colorOn="#666" colorOff="#4f8ef7" />
             </div>
