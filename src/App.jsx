@@ -1119,7 +1119,7 @@ export default function App() {
             }}>
               <Lbl text="⭐ 模範勤務のその他条件を満たしていますか？"
                 hint="拘束時間違反なし・出番変更なし等" />
-              <Toggle value={mohanOK} onChange={v => setMohanOK(!v)}
+              <Toggle value={!mohanOK} onChange={v => setMohanOK(!v)}
                 labelOn="満たしていない" labelOff="満たしている"
                 colorOn="#666" colorOff="#4f8ef7" />
             </div>
